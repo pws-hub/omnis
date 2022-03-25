@@ -1,0 +1,22 @@
+{
+  "entity": "NODE",
+  "name": "ProtoMate-003.1",
+  "description": "",
+  "port": 4400,
+  "private": true,
+  "accessKey": "AUdHIj9J4Hgas5HXkIYB567Y42eSLvjJn2GaYVhufIR5wDrZiT2UmSR6glJ9eN1YPw",
+  "connection": {
+    "standalone": false,
+    "groups": [ '*' ],
+    "maxPeers": 1000
+  },
+  "catalogue": {
+    "path": "../scopes/",
+    "scopes": [
+      "index"
+    ]
+  },
+  "dependencies": [
+    "deps.sih"
+  ]
+}

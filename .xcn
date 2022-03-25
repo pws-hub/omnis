@@ -1,0 +1,9 @@
+{
+  "version": "0.9.0",
+  "env": {
+    "type": "node",
+    "language": "node_js",
+    "support": "7+",
+    "current": "v14.16.1"
+  }
+}

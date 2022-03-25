@@ -1,0 +1,33 @@
+{
+  "version": "0.1.0",
+  "env": {
+    "type": "node",
+    "language": "node_js",
+    "support": "7+",
+    "current": "v12.14.0"
+  },
+  "config": {
+    "type": "NSR",
+    "role": "SRN",
+    "hostname": "Mobile.1",
+    "ip": "127.0.0.1",
+    "port": 4400,
+    "private": true,
+    "accesskey": "AUdHIj9J4Hgas5HXkIYB567Y42eSLvjJn2GaYVhufIR5wDrZiT2UmSR6glJ9eN1YPw",
+    "attributes": {
+      "stack": "F*",
+      "groups": [ '*' ],
+      "max_conn": 1000
+    },
+    "catalogue": {
+      "path": "../scopes/",
+      "scopes": [
+        "index"
+      ]
+    },
+    "logs": {
+      "path": "/log",
+      "extension": ".xnt"
+    }
+  }
+}

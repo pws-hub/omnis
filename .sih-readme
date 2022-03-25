@@ -1,0 +1,179 @@
+#SIH-TYPE: Service/Dependency Scopes
+
+! SIH: Scope Instruction Hypertext
+!
+! Design to define scopes & dependencies payloads used by "Multi-Connect Network (XCN)" Peers
+! to provider and share resources over the network. It's composed of line of instructions telling
+! which information a particular Service-Provider is providing to the world and which other information
+! it depends on from another peers (Service-Provider) of the network.
+
+! Briefly, SIH instruction aren't complicated, especially if you're already familiar with "webhooks". Don't
+! judge the syntax as complex right away, it's easy to understand than it looks.
+
+! As you probably noticed already, "!" symbol define a start of a "comment" line in an ".sih" file content
+! and those are completly ignore when the SIH-Parser parses this content. All programmer knows how crucial
+! "code comments" are. So when we take out all those comments, you can see all left is clean an straight-forward.
+
+user:id:-r                            ! Simpless SIH instruction. By description, it means this peer provide
+                                      ! its user's "user:" information, especially their "id:" which can only be
+                                      ! read "-r".
+                                      ! Noticed that the instruction is in 3 simple compositions separated by the
+                                      ! double-dot ":" symbol.
+                                      ! - The first portion is call the "datatype". The type of data/service this
+                                      !   peer is providing which in this case is "user information"
+                                      ! - The second portion is "content" or "field" (You may choose the one that
+                                      !   adjust well to your understanding). It ells what info about a "user" is provided.
+                                      ! - The last portion is "permission". Which control is being giving over that
+                                      !   user information by this provider: Create(c), Read(r), Write(w), Delete(x), ...
+                                      !
+                                      ! That's what it all about. Now comes some small tricks to help write those
+                                      ! instructions in a more simple and thought-full ways. I guess all comes now
+                                      ! more handy.
+                                      !
+                                      ! The most important thing to understand, that defines the power of instructions
+                                      ! is permissions. How to allocate them in a way that align well with the service
+                                      ! that is been provided. Once that is mastered, the rest is just a cake.
+
+                                      ! Before we get to further explanations, note that it doesn't matter whether permissions
+                                      ! are written in capital letter or not. You'll quickly find out why.
+                                      !
+                                      ! The instruction right after is a way of defining "datatype" one time for multiple
+                                      ! instruction lines having the same datatype.
+
+user:id:-r                            ! These lines works fine but it's a bit dirty to keep writing "user:" prefix for
+user:name:-rw                         ! all line that have "user" datatype, especially if they are a lot. So check out
+user:gender:-write                    ! how best we can break it down:
+
+[user]                                ! Voila. It says, from here, any instruction situated below have "user" as datatype
+                                      ! so no need to attach "user:" to them anymore, the parser will handle that. You're
+id:-r                                 ! now free to focus on only the "fields" and "permissions".
+name:-rw                              ! NOTE: Until when you define another datatype, "user" will continue being the datatype
+gender:-write                         !       of all instruction. Hope it's now clear. The parser will throw "datatype conflict error"
+                                      !       if beside the datatype define above, you still add "user:" prefix to subsequent instruction.
+
+                                      ! Now that we're free from datatype, let take a careful look at "fields" and "permissions"
+                                      ! The star symbol "*", when it comes to "fields" mean "all fields" and about "permissions" it
+                                      ! mean full permission so be careful using it. It's always recommended not to set "*" as
+                                      ! permission if you don't know what you're doing.
+
+*:-w                                  ! Have "write(w)" permission to "all" user fields
+name:*                                ! Have "all" permission to "user.name" field
+                                      !
+location.country:create               ! As you can see since the our first instruction, writing a "field" is very easy.
+                                      ! You provide it, then you know it so just write it. That's all. The little different
+                                      ! here is that instead creating or updating user's location, it's giving us more specific
+                                      ! option to manipulate the content of a field, which here is "country". That follow the same
+                                      ! the same way JavaScript Object Assignment works.
+location.language.local:-rw           ! This show that you can go as deep as you want in a field declaration.
+                                      ! Eg. location.country.local.city.neighbor....
+location[country-city]:-r             ! You can even declare access to only some content of a field. This gives access to read
+location[city-language.local]:-r      ! "location.country", "location.city" and the following instruction also targeted "location.language.local"
+                                      !
+                                      ! It makes life easy right?
+                                      !
+                                      ! Only permissions take as to another level. When it comes to SIH, there are two type of
+                                      ! permissions:
+                                      ! 1. Standard permissions: All developers know them and use them in different environment,
+                                      !    in different forms: Create, Read, Write, Update, Delete. Usually used in a file system
+                                      !    operations and known as "CRUD" or "rwx". They are called standard here cause XCN Request
+                                      !    interface implement them by default as build in request methods and listeners.
+                                      !    If you know those permissions and their rules, you got it all, there are no more surprise
+                                      !    for you because the use is the same here too.
+                                      ! Eg.
+                                      !
+id:create                             ! - "create" or "-c": Permission to create resources (user.id)
+name:read                             ! - "read" or "-r": Permission to read existing resources (user.name => Alexandra)
+email:write                           ! - "write" or "-CU" or "-cu" (create-update) or "-w": it's a combination of two major permissions
+                                      ! which means if there's an existing email, it get replace by a new one otherwise it creates new email.
+phone:delete                          ! - "delete" or "-x" or "d": SIH try to be flexible with permission declaration for people to be able
+                                      ! to easily guess them. This is a permission to delete existing resources.
+                                      ! NOTE: You can even assign full "-CRUD" or "-crud" (create-read-update-delete) or simply
+                                      !       "-rwx" (read-write-delete) to an instruction. It all works.
+                                      !
+                                      ! 2. Custom permissions: Any provider can declare them at a guise using any word of choice
+                                      !    as long as it's explicit and works accordingly to its meaning. People who come to use your
+                                      !    services shouldn't get confused to know what exactly your custom permission means. It must
+                                      !    really tell about what exactly it does.
+                                      ! Eg.
+                                      !
+location:find                         ! "find": Permission the ask this provider to find a particular user's location.
+location.country:--check              ! Yeah, custom permission can also be written this way, to make more catchy the difference
+                                      ! in syntax readability. Sometimes, you might get confused between standard and custom permission
+                                      ! or even a field syntax unless you look well. So it recommended to write custom permission with
+                                      ! "--" prefix. "location:--find" looks explicit than "location:find". All work though.
+                                      ! Same as the instruction above "rename-hex" become "rename_hex"
+                                      !
+                                      ! WARNING: The dashed "-" within field content like "country-side" is mute and replaced by "_" when
+                                      !          parsing the instruction, so be careful not to publish or set instructions that way
+                                      !          expecting the parser to interpret "country" and "side" as two separate words.
+
+[activity]                            ! Define new datatype. As said above, "user" datatype application ends here, another one
+                                      ! as declared, hence takes the lead. That's how the parser proceed the parsing.
+history:-rx-search                    ! "read" or "delete" or "search": Combination of Standard and Custom permissions in case you don't
+                                      ! want to duplicate field instruction just because permission types are different.
+                                      !
+ongoing#current:-wx                   ! Ola! The directive symbol "#". Technically, it defines a meta operation directive on the value of
+                                      ! this field. wow! Let explain that with common words: You know sometimes when fetch the data from a
+                                      ! database but actually you'd have prefer the data to be in certain ways/format that maybe the Query
+                                      ! Language cannot do; which compels to setup some middle-ware processes yourself to get the data passes
+                                      ! through once it is fetched before to do whatever you planned? Yes that's exactly what "meta operations"
+                                      ! are all about. The advantage here is that you as provider, might setup those middle-wares to work out
+                                      ! the outputs of some resources you are providing but since middle-ware processes may not be a major
+                                      ! function, you'd like to give your users option of choosing them. That's when you define those "directives".
+                                      ! In this case, users can "create, update or delete" --current-- "ongoing" activity, same as the following
+poster#rename-hex:update              ! instruction stipulated that: By updating "activity poster", rename it in hexadecimal name format
+
+                                      ! On XCN, services can use each others resources the same guest users get connect to the network to
+                                      ! enjoy services. All that work by XCN's dependency protocol: Service can depend on other services.
+                                      ! The dependency protocol stipulate that, to use one service's resources, you'd have to provide:
+                                      ! 1. the service's hostname
+                                      ! 2. Those of its resources you'd like to use in SIH format
+                                      !
+                                      ! A scenario will help us understand this better:
+                                      !  - All the instruction above are what you as service resource provider, provides to the world as "benzySchool"
+                                      !  - Now, you (benzySchool) would like to access some of medium course (Medium is also providing some services
+                                      !    include its courses on the XCN ), let see how you go about that.
+
+@medium                               ! Here you define an external scopes provider (dependency reference) which is "medium". That's not all, you
+                                      ! just mention to the parser with the "@" symbol that, it's reading a dependency service provider's hostname
+                                      ! and that following instruction will be a dependencies: Not something i provide but rather something i need
+                                      ! from a 3rd party service provider.
+[course]                              ! Define a dependency datatype I'd like to get from "medium"
+*:-rwx                                ! Request authorization to "create, read, update or delete" courses from "medium"
+                                      !
+                                      ! XCN take case of the rest from here. Once you get to the network, XCN will Automatically find "medium"
+                                      ! if it exist, submit you dependency request to them, then return granted credentials to you to process
+                                      ! what you requested for with them. If you're asking a resource that they don't have or can't provide to you
+                                      ! like a unknow datatype, field or wrong permission, XCN will return a "denied access" notification to you
+                                      ! telling you why. This check-ups happen before and after you get granted and at every request you make.
+                                      ! You can't get grant to a particular resource and later on ask for another one. Even if the provider provide
+                                      ! the new resources, XCN will bounce your request. You'd have to update you dependency scopes to access those.
+                                      !
+                                      ! Awesome right?
+                                      !
+                                      ! Now XCN didn't struggle to get us "medium"'s credentials cause medium services are public. If the service
+                                      ! provider you need is private, there must be an "access-key" add-up before to get granted access to its resources.
+@edx:AUdHIj9J4Hg...iT2UmSR6geN1YPw    ! This is "edx" another dependency service provider but this time, the provider request an "access-key" before
+                                      ! to grant credential to this you. I guess you should be able to make a difference between the provider's hostname
+                                      ! and its "access-key". It all separated by the ":" symbol.
+                                      !
+                                      ! For any private service provider that respect XCN privacy protocols, "access-keys" are unique by access. So
+                                      ! it's a bad idea to use someone else's "access-key" expecting to get granted. Few tentative a tolerated but
+                                      ! you might end up on XCN's blacklist if it replicated after several fails.
+
+!--------------------------------------------------------------------------------------------------------------------------------------------------------
+! It's not all the time that you'll keep instruction in the same file. When all get to be clumsy or a need of a better structure get imposed, breaking
+! SIH instruction is different files helps a lot. It's not even advised to keep loading instruction doing different things in the same file. After all,
+! it all depend on you taste as developer.
+!
+! Inclusion file reference is ">" symbol. I guess it's logic.
+
+> math/graph.sih                      ! Including "graph.sih" file content into this one, from "math" directory situated in the same directory of
+                                      ! this file. Actually, the directory of file in which the parser find the inclusion file path became reference
+                                      ! to resolve its directory.
+> formula                             ! File from the same directory.
+> ../roles.sih                        ! File from parent directory. All file system directory path is possible
+                                      !
+> https://example.com/path/books.sih  ! You can also include file directly from a 3rd party server. Great right? What i guess is going to be fun is that,
+                                      ! XCN aim to create ".sih" files sharing automation package managers for service providers, to have more flexibility
+                                      ! to create re-usable SIH contents and maintain them in synchronization with the Oracle Cataloger.
