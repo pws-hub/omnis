@@ -1,5 +1,5 @@
 
-export const __ = {
+export const ON = {
   SECURE_MODE: false,
   DEBUG_MODE: true
 }
@@ -7,7 +7,7 @@ export const __ = {
 export const toSID = ( id: string ) => { return id.replace(/^\//,'').split('#')[0] }
 export const toHTTP = ( domain: string ) => {
   const
-  hproto = 'http'+( __.SECURE_MODE ? 's' : '' )+'://',
+  hproto = 'http'+( ON.SECURE_MODE ? 's' : '' )+'://',
   xproto = /^xcn:\/\/\//
 
   if( domain && xproto.test( domain ) ){
@@ -34,7 +34,7 @@ export const toHTTP = ( domain: string ) => {
 }
 export const toXCN = ( domain: string ) => {
   const
-  hproto = new RegExp( '^http'+( __.SECURE_MODE ? 's' : '' )+'://' ),
+  hproto = new RegExp( '^http'+( ON.SECURE_MODE ? 's' : '' )+'://' ),
   xproto = 'xcn:///'
   return domain && hproto.test( domain ) ? domain.replace( hproto, xproto ) : xproto + domain
 }

@@ -287,7 +287,8 @@ export const Server = ( session?: string ) => {
   server = new ioServer.Server( port, configs )
 
   // Safe Agent middle check
-  return server.use( ( socket, next ) => {
+  server
+  .use( ( socket, next ) => {
     // Verify New socket connection Agent's Integrity
 
     // No cookie are supported
@@ -339,6 +340,11 @@ export const Server = ( session?: string ) => {
 
     next()
   })
+  .on('disconnect', () => {
+    
+  })
+
+  return server
 }
 
 export const Client = ( { host, channel }: ClientConnection, session?: string ) => {
