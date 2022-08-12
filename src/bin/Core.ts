@@ -1,62 +1,85 @@
-
+import fs from 'fs-extra'
 import Events from 'events'
-import type { ON } from '../../types'
+import { DOTOMNIS_FILE_PATH, ENTITIES } from '../config/constants'
+import { debug } from '../utils'
+import type { OmnisConfig } from '../../types'
 
-export const Core: ON = {
+export default class Core {
 
-  REQUIRED_CONFIGS: null,
-  DNSServer: null,
-  HTTPServer: null,
-  ONServer: null,
-  HookClient: null,
-  OmnisClient: null,
-  SocketClient: null,
-  ServiceHookClient: null,
-  HostServerIPv4: null,
+  private REQUIRED_CONFIGS: null = null
+  private DNSServer: null = null
+  private HTTPServer: null = null
+  private ONServer: null = null
+  private HookClient: null = null
+  private OmnisClient: null = null
+  private SocketClient: null = null
+  private ServiceHookClient: null = null
+  private HostServerIPv4: null = null
 
-  NODEChannel: null,
-  GUESTChannel: null,
+  private NODEChannel: null = null
+  private GUESTChannel: null = null
 
-  GetConnectPayload: null,
-  GetConnectCallback: null,
-  ServiceInterfaceSocket: false,
-  ServiceInterfaceChannel: null,
+  private GetConnectPayload: null = null
+  private GetConnectCallback: null = null
+  private ServiceInterfaceSocket: boolean = false
+  private ServiceInterfaceChannel: null = null
 
-  CLI_MODE: false,
-  DEBUG_MODE: process.argv.slice(2).includes('--debug'),
-  SECURE_MODE: false,
-  CRITICAL_SWITCH_MODE: false,
+  private CLI_MODE: boolean = false
+  private DEBUG_MODE: boolean = process.argv.slice(2).includes('--debug')
+  private SECURE_MODE: boolean = false
+  private CRITICAL_SWITCH_MODE: boolean = false
 
-  INTERFACES: {},
-  NODE_CATALOGUE: {},
-  SCOPES_CATALOGUE: { datatype: [], fields: {} }, // init state of a scopes catalogue
-  HOOK_ACTIVE_DATA: null,
-  PARENT_HOOK_DATA: null,
-
-  /*----------------------------------------------------------------------------------*/
-  IS_CONNECTED: false,
-  FIRST_CONNECTION: false,
-  INTERNET_CONNECTION: false,
-  SOCKET_ATTEMPTED_RECONNECT_COUNT: 0,
-
-  PREREQUEST_CONNECTION_LIST: {},
-  SCOPE_REQUEST_WHITELIST: {}, // unavailable scopes requested guests list
-
-  ANALYSIS_TRACKING_STATS: {},
-  ANALYSIS_ACTIVE_TRACKERS: {},
-
-  CONNECTED_GUESTS: {},
-  CONNECTED_NODES: {},
-  CONNECTED_SCOPES: {},  // details of all platforms connect in the xConnect network
-  CONNECTED_PLATFORMS: {}, // details of all platforms connect in the xConnect network
-
-  AnalysisChecker: 0,
-  RefreshTimeChecker: 0,
-  socketReconnectChecker: 0,
+  private INTERFACES = {}
+  private NODE_CATALOGUE = {}
+  private SCOPES_CATALOGUE = { datatype: [], fields: {} } // init state of a scopes catalogue
+  private HOOK_ACTIVE_DATA: null = null
+  private PARENT_HOOK_DATA: null = null
 
   /*----------------------------------------------------------------------------------*/
+  private IS_CONNECTED: boolean = false
+  private FIRST_CONNECTION: boolean = false
+  private INTERNET_CONNECTION: boolean = false
+  private SOCKET_ATTEMPTED_RECONNECT_COUNT: number = 0
 
-  Readline: null,
-  event: new Events.EventEmitter()
+  private PREREQUEST_CONNECTION_LIST = {}
+  private SCOPE_REQUEST_WHITELIST = {} // unavailable scopes requested guests list
 
+  private ANALYSIS_TRACKING_STATS = {}
+  private ANALYSIS_ACTIVE_TRACKERS = {}
+
+  private CONNECTED_GUESTS = {}
+  private CONNECTED_NODES = {}
+  private CONNECTED_SCOPES = {}  // details of all platforms connect in the xConnect network
+  private CONNECTED_PLATFORMS = {} // details of all platforms connect in the xConnect network
+
+  private AnalysisChecker: number = 0
+  private RefreshTimeChecker: number = 0
+  private socketReconnectChecker: number = 0
+
+  /*----------------------------------------------------------------------------------*/
+
+  private Readline: null = null
+  private event = new Events.EventEmitter()
+
+  async init( config?: OmnisConfig ){
+
+    if( !config || typeof config != 'object' ){
+      if( await fs.pathExists( DOTOMNIS_FILE_PATH ) )
+        try { config = await fs.readJSON( DOTOMNIS_FILE_PATH ) as OmnisConfig }
+        catch( error ){ 
+          debug('error', error )
+          return
+        }
+      else {
+        debug('error', 'No Configuration Found')
+        return
+      }
+    }
+    
+    // Set GPR as default peer type
+    if( !config.entity || !ENTITIES.includes( config.entity ) )
+      config.entity = 'ELEMENT'
+
+    return require('../entities/'+ config.entity ).default( config )
+  }
 }

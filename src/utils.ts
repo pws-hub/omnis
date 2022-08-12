@@ -60,3 +60,31 @@ export const Params2Obj = ( str: string, excludes?: any[] ) => {
 
   return obj
 }
+
+export const Info = ( text: string ) => { return text }
+export const debug = ( type: string, ...args: any[] ) => {
+  // Output log mode
+  let mode = 'log',
+      title = ''
+
+  if( !args || !args.length ){
+    args = [ type ]
+    type = ''
+  }
+  else if( !!args && [ 'log', 'info', 'table', 'error' ].includes( args[ args.length - 1 ] ) )
+    mode = args.pop()
+
+  switch( type ){
+    case 'service': title = '[SERVICE] '; break
+    // case 'error': title = '\n['+ Danger('ERROR') +'] '; break
+    case 'oracle': title = '[ORACLE] '; break
+    case 'connect': title = '[CONNECT] '; break
+  }
+
+  // Monitoring log
+  // if( Omnis.DEBUG_MODE ) console.log( title, ...args )
+
+  // Also update the log file
+  args.unshift( title )
+  console.log( args.join(' ') )
+}

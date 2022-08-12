@@ -1,6 +1,6 @@
 
 declare global {
-  var ON: any
+  var Omnis: any
   var Config: {
     [index: string]: any
   }

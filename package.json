@@ -7,15 +7,20 @@
     "build": "rimraf ./build && tsc",
     "start": "nodemon",
     "start:prod": "node build/index.js NODE_ENV=production",
+    "test:e3proto:server": "ts-node ./test/E3Proto.test.ts --server",
+    "test:e3proto:client": "ts-node ./test/E3Proto.test.ts --client",
+    "test:node": "ts-node ./test/node.test.ts --offline",
     "test": "ava test/**/*.js --verbose",
     "lint": "eslint . --ext .ts"
   },
   "types": "src/@types",
   "dependencies": {
+    "@types/fs-extra": "^9.0.13",
     "cli-color": "^2.0.1",
     "crypto-js": "^4.1.1",
-    "socket.io": "^4.4.0",
-    "socket.io-client": "^4.4.1"
+    "fs-extra": "^10.1.0",
+    "socket.io": "^4.5.1",
+    "socket.io-client": "^4.5.1"
   },
   "devDependencies": {
     "@types/crypto-js": "^4.1.1",

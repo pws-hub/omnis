@@ -1,50 +1,36 @@
 
 import { URL } from 'url'
-import Emitter from 'component-emitter' // polyfill of Node.js EventEmitter in the browser
 import CryptoJS from 'crypto-js'
-import ioServer from 'socket.io'
+import Emitter from 'component-emitter' // polyfill of Node.js EventEmitter in the browser
+import ioServer, { Namespace } from 'socket.io'
 import ioClient from 'socket.io-client'
+// import { createClient } from 'redis'
+// import { createAdapter } from '@socket.io/redis-adapter'
+import { E3 } from '../../types/E3'
 import {
+  Info, 
+  debug,
   toHTTP,
-  Params2Obj
+  Params2Obj,
 } from '../utils'
 import {
   ENTITIES,
   DEFAULT_PORT,
   IO_CONNECTION_CONFIG
 } from '../config/constants'
-import { ClientConnection } from '../../types'
-
-declare namespace E3 {
-  type CipherParams = {
-    mode?: 'CTR' | 'CBC' | 'CFB' | 'OFB'
-    padding?: 'Pkcs7' | 'Iso97971' | 'AnsiX923' | 'Iso10126' | 'ZeroPadding' | 'NoPadding'
-  }
-
-  type Options = CipherParams & {
-    sid: string
-    session: string
-  }
-
-  type Meta = CipherParams & {
-    session: string
-    token?: string
-  }
-}
 
 // End-2-End Encryption Protocol
 class E3Proto {
 
   private pubKey = ''
+  private newPubKey = '' // Use during refreshing keys
   private priKey = ''
   private cipherParams: any
   private options: E3.Options
   private isGenerated = false
 
   constructor( options: E3.Options ){
-
     this.options = options || {}
-    
     this.cipherParams = {
       mode: CryptoJS.mode[ this.options.mode || 'CFB' ],
       padding: CryptoJS.pad[ this.options.padding || 'AnsiX923' ]
@@ -62,7 +48,7 @@ class E3Proto {
 
   getPubKey(){
     // Return the generated public key
-    return this.pubKey && this.pubKey.toString()
+    return this.newPubKey || (this.pubKey && this.pubKey.toString())
   }
 
   getConfig(){
@@ -72,7 +58,7 @@ class E3Proto {
     return this.isGenerated ? this.cipherParams : null
   }
 
-  generateKeys(){
+  generateKeys( refresh?: boolean ){
     
     if( !this.options.sid  || !this.options.session ){
       this.debug('Undefined Auth Configuration')
@@ -86,7 +72,10 @@ class E3Proto {
                         .toString( CryptoJS.enc.Base64 )
                         .replace(/=+$/, '')
 
-      this.adoptKey( pubKey )
+      refresh ?
+        this.newPubKey = pubKey
+        : this.adoptKey( pubKey )
+
       return this.isGenerated = true
     }
     catch( error ){
@@ -97,14 +86,15 @@ class E3Proto {
 
   adoptKey( pubKey: string ){
     
-    if( this.pubKey && this.pubKey !== pubKey ){
-      this.debug('Unmatched Public Key')
-      return false
-    }
-
+    // if( !this.newPubKey && this.pubKey && this.pubKey !== pubKey ){
+    //   this.debug('Unmatched Public Key')
+    //   return false
+    // }
+    
     try {
       this.cipherParams.iv = CryptoJS.SHA256( pubKey + this.options.session )
       this.pubKey = pubKey
+      this.newPubKey = '' // No more needed
 
       const
       plen = pubKey.length,
@@ -167,48 +157,95 @@ class E3Proto {
   }
 }
 
-function Info( text: string ){ return text }
-function debug( error: string ){ console.log( error ) }
+type ParserStoreSet = {
+  token: string
+  protocol: E3Proto
+  expiry?: number
+}
 
-const Parser = ( type: string, meta: E3.Meta ) => {
+interface ParserStore {
+  get: ( sid?: string ) => ParserStoreSet
+  set: ( toStore: ParserStoreSet, sid?: string ) => void
+}
+
+const 
+Parser = ( type: string, meta: E3.Meta, Store: ParserStore ) => {
 
   // Socket-Server
   if( !meta.session ){
-    debug( Info('Unauthorize End-To-End Connection') )
+    debug('E3Proto', Info('Unauthorize End-To-End Connection') )
     return {}
   }
 
-  let 
-  protocol: E3Proto,
-  Token: string | unknown
-  
   class Encoder {
-
     /** Encode a packet into a list of strings/buffers
      */
     encode( packet: any ){
+      
       if( packet.type === 0 ){
-        if( type == 'server' && !Token ){
+        if( type == 'server' ){
           // Initialize End-to-End Encryption protocol
-          protocol = new E3Proto({ sid: packet.data.sid, ...meta })
+          const protocol = new E3Proto({ sid: packet.data.sid, ...meta })
           
           // Generate keys: privKey, pubKey
           if( !protocol.generateKeys() ){
-            debug( 'Unauthorized End-To-End Connection \t[CID]: '+ packet.data.sid )
+            debug('E3Proto', 'Unauthorized End-To-End Connection \t[CID]: '+ packet.data.sid )
             return false
           }
 
           // Initialize encrypted commnunication interfaces
-          debug( Info('END-TO-END Encryption Initialized') )
+          debug('E3Proto', Info('END-TO-END Encryption Initialized') )
 
-          // Get public Key as token to be send to client
-          Token = 
-          packet.token = protocol.getPubKey()
+          const toStore: ParserStoreSet = {
+            protocol,
+            token: packet.token = protocol.getPubKey(), // Get public Key as token to be send to client
+            expiry: Date.now() + ( 90 * 1000 ) // Token expires every 90 seconds
+          }
+
+          // Attach to the socket
+          Store.set( toStore, packet.data.sid )
         }
-          
+        
         return [ JSON.stringify( packet ) ]
       }
-      else return [ protocol.encrypt( packet ) ]
+      // Connection Error
+      else if( packet.type === 4 ) 
+        return [ JSON.stringify( packet ) ]
+
+      else {
+        if( packet.type !== 3 && Array.isArray( packet.data ) ){
+          const sid = packet.data[1]
+          packet.data.splice(1, 1)
+          
+          const { protocol, expiry } = Store.get( sid )
+
+          if( Date.now() >= (expiry as number) ){
+            // Token expired: Generate new keys: privKey, pubKey
+            if( !protocol.generateKeys( true ) ){
+              debug('E3Proto', 'Refresh End-To-End Connection Token Failed \t[CID]: '+ sid )
+              return false
+            }
+            
+            debug('E3Proto', Info('END-TO-END Encryption Token refreshed') )
+            
+            const toStore: ParserStoreSet = {
+              protocol,
+              token: packet.token = protocol.getPubKey(), // Get public Key as token to be send to client
+              expiry: Date.now() + ( 90 * 1000 ) // Set next token expiry time
+            }
+            // Update socket store
+            Store.set( toStore, sid )
+            
+            // Create response with current keys 
+            packet.data = protocol.encrypt( packet.data )
+            // Then adopt new keys
+            protocol.adoptKey( toStore.token )
+          }
+          else packet.data = protocol.encrypt( packet.data )
+        }
+
+        return [ JSON.stringify( packet ) ]
+      }
     }
   }
 
@@ -218,34 +255,44 @@ const Parser = ( type: string, meta: E3.Meta ) => {
      * "decoded" event with the reconstructed packet 
      */
     add( chunk: string ){
-      let packet
+      // Non-Encrypted packet
+      let packet = JSON.parse( chunk )
+      const sid = packet.data && packet.data.sid || packet.sid
       
-      try {
-        // Non-Encrypted packet
-        packet = JSON.parse( chunk )
+      // New client connection
+      if( type == 'client'
+          && meta 
+          && packet.type === 0 ){
+        // Initialize End-to-End Encryption protocol
+        const protocol = new E3Proto({ sid, ...meta })
+        // Update socket store
+        Store.set({ protocol, token: packet.token })
         
-        if( type == 'client'
-            && meta 
-            && packet.type === 0
-            && !Token ){
-          // Initialize End-to-End Encryption protocol
-          protocol = new E3Proto({ sid: packet.data.sid, ...meta })
-          Token = packet.token
+        if( !protocol.adoptKey( packet.token ) )
+          throw new Error('Unauthorized End-To-End Connection \t[CID]: '+ sid )
+        
+        // Initialize encrypted commnunication interfaces
+        debug('E3Proto', Info('END-TO-END Encryption Initialized') )
+      }
+      
+      // Decrypt packet: E2E protocol mode
+      if( packet && typeof packet.data == 'string' ){
+        const { protocol } = Store.get( sid )
 
-          // console.log( 'Client Token: ', Info( token ) )
-          if( !protocol.adoptKey( packet.token ) )
-            throw new Error('Unauthorized End-To-End Connection \t[CID]: '+ packet.data.sid )
+        packet.data = protocol.decrypt( packet.data )
+        if( !packet ) return
+
+        // Token got refreshed: Client only adopt it
+        if( type == 'client' && packet.token ){
+          Store.set({ protocol, token: packet.token })
           
-          // Initialize encrypted commnunication interfaces
-          debug( Info('END-TO-END Encryption Initialized') )
+          if( !protocol.adoptKey( packet.token ) )
+            throw new Error('Unauthorized End-To-End Connection \t[CID]: '+ sid )
+          
+          debug('E3Proto', Info('New END-TO-END Encryption Adopted') )
         }
       }
-      // Decrypt packet: E2E protocol mode
-      catch( error ){ 
-        packet = protocol.decrypt( chunk )
-        if( !packet ) return
-      }
-
+      
       if( !this.isPacketValid( packet ) )
         throw new Error('invalid format')
 
@@ -274,99 +321,144 @@ const Parser = ( type: string, meta: E3.Meta ) => {
   }
 
   return { Encoder, Decoder }
+},
+DefaultFirewall: E3.Firewall = ( socket, error, allow ) => {
+  // Verify New socket connection Agent's Integrity
+
+  // No cookie are supported
+  if( socket.request.headers.cookie ){
+    debug('E3Proto', 'NSR::SET_COOCKIE => Unauthorized Defined Cookies')
+    return error('ON-Connect: Unauthorized Defined Cookies')
+  }
+
+  /*
+    headers: // the headers sent as part of the handshake *
+    time: // the date of creation (as string) *
+    address: // the ip of the client
+    xdomain: // whether the connection is cross-domain
+    secure: // whether the connection is secure
+    issued: // the date of creation (as unix timestamp)
+    url: // the request URL string
+    query: // the query object
+  */
+  const
+  headers = socket.handshake.headers,
+  ip = socket.handshake.address,
+  cors = socket.handshake.xdomain,
+  isSecure = socket.handshake.secure,
+  issuedTime = socket.handshake.issued
+
+  // Must be a secure ONs connection domain
+  // if( !isSecure )
+  //   return debug( 'connect', 'Peer Rejected::Insecure Connection <Protocol>' )
+
+  // Must be a cross-domain connection
+  // if( !cors )
+  //   return debug( 'connect', 'Peer Rejected::Unauthorised Connection <Domain>' )
+
+  if( !headers['on-peer-id'] )
+    return debug('E3Proto', 'Peer Rejected::Unauthorised Connection <CID> is undefined')
+
+  /* Custom headers
+    - on-peer-* (type, role, id)
+    - on-time-* (current, utc, duration)
+
+  */
+  // Only known "user-agent" are allowed
+  if( !headers['on-peer-type']
+      || !ENTITIES.includes( headers['on-peer-type'] as string ) )
+    return debug('E3Proto', 'Peer Rejected::Unknown Peer Agent <Type>')
+
+  // Moment of "issued" conection, "time"
+  debug('E3Proto', Info('Socket Connection Issued') +' at '+ Date().split('(')[0] )
+
+  allow()
 }
 
-export const Server = ( session?: string ) => {
+const SOCKETS: { [index: string]: E3.PSocket } = {}
+
+export const Server = ( session?: E3.PServerOptions ) => {
   // Create new socket server
   const 
   port = Number( process.env.PORT
           || Config.get('port')
           || new URL( toHTTP( process.env.HOST || Config.get('uri') ) ).port
           || DEFAULT_PORT ), // default port
-  configs = session ? { ...IO_CONNECTION_CONFIG, parser: Parser( 'server', { session } ) } : IO_CONNECTION_CONFIG,
-  server = new ioServer.Server( port, configs )
-
-  // Safe Agent middle check
-  server
-  .use( ( socket, next ) => {
-    // Verify New socket connection Agent's Integrity
-
-    // No cookie are supported
-    if( socket.request.headers.cookie ){
-      debug('NSR::SET_COOCKIE => Unauthorized Defined Cookies')
-      return next( new Error( 'ON-Connect: Unauthorized Defined Cookies' ) )
+  parserStore = {
+    get: ( sid?: string ): ParserStoreSet => {
+      return SOCKETS[ sid as string ]?.data.ParserStore 
+    },
+    set: ( toStore: ParserStoreSet, sid?: string ): void => {
+      if( !SOCKETS[ sid as string ] ) return
+      SOCKETS[ sid as string ].data.ParserStore = toStore 
     }
+  },
+  configs = session ? 
+              { ...IO_CONNECTION_CONFIG, parser: Parser( 'server', { session }, parserStore ) } 
+              : IO_CONNECTION_CONFIG,
+  server = new ioServer.Server( port, configs ) as E3.PServer
 
-    /*
-      headers: // the headers sent as part of the handshake *
-      time: // the date of creation (as string) *
-      address: // the ip of the client
-      xdomain: // whether the connection is cross-domain
-      secure: // whether the connection is secure
-      issued: // the date of creation (as unix timestamp)
-      url: // the request URL string
-      query: // the query object
-    */
-    const
-    headers = socket.handshake.headers,
-    ip = socket.handshake.address,
-    cors = socket.handshake.xdomain,
-    isSecure = socket.handshake.secure,
-    issuedTime = socket.handshake.issued
+  server.registerSocket = ( socket: E3.PSocket ) => {
+    const emit = socket.emit
+    socket.emit = ( _event, ...args ) => {
+      args.unshift( socket.id )
+      emit.bind( socket )( _event, ...args )
+      return true
+    }
+    socket.conn.on('packet', ( packet ) => {
+      if( packet.type !== 'message' ) return
+      packet.data = packet.data.replace(/\}$/, `,"sid":"${socket.id}"}`)
+    })
+    SOCKETS[ socket.id ] = socket
+  }
+  server.unregisterSocket = ( socket: E3.PSocket ) => delete SOCKETS[ socket.id ]
+  server.nsp = ( nsp: string, firewall?: E3.Firewall ): Namespace => {
+    return server
+    .of(`/${nsp}`)
+    .use( ( socket, next ) => {
+      
+      function register(){
+        // Register for E2E parser
+        server.registerSocket( socket )
+        socket.on('disconnect', () => server.registerSocket( socket ) )
 
-    // Must be a secure ONs connection domain
-    // if( !isSecure )
-    //   return debug( 'connect', 'Peer Rejected::Insecure Connection <Protocol>' )
+        next()
+      }
+      
+      // Put on a firewall
+      (typeof firewall === 'function' ? firewall : DefaultFirewall)( socket, ( error: string ) => next( new Error(`ON: ${error}`) ), register )
+    } )
+  }
 
-    // Must be a cross-domain connection
-    // if( !cors )
-    //   return debug( 'connect', 'Peer Rejected::Unauthorised Connection <Domain>' )
-
-    if( !headers['on-peer-id'] )
-      return debug('Peer Rejected::Unauthorised Connection <CID> is undefined')
-
-    /* Custom headers
-      - on-peer-* (type, role, id)
-      - on-time-* (current, utc, duration)
-
-    */
-    // Only known "user-agent" are allowed
-    if( !headers['on-peer-type']
-        || !ENTITIES.includes( headers['on-peer-type'] as string ) )
-      return debug('Peer Rejected::Unknown Peer Agent <Type>')
-
-    // Moment of "issued" conection, "time"
-    debug( Info('Socket Connection Issued') +' at '+ Date().split('(')[0] )
-
-    next()
-  })
-  .on('disconnect', () => {
-    
-  })
+  // No socket connection allow to the mainspace
+  server.use( socket => socket.disconnect() )
 
   return server
 }
 
-export const Client = ( { host, channel }: ClientConnection, session?: string ) => {
+export const Client = ({ session, host, namespace, accessToken }: E3.PClientOptions ) => {
 
-  if( !host || !Config )
-    throw new Error('Undefined Peering Settings')
-
-  let uri, query
+  if( !host || !session )
+    throw new Error('Undefined Peering Settings: Expect <host>, <session>, <namespace>')
 
   /* Internal guest dependency exculsive socket connection
     Here only the connection URI is set as argument
   */
-  if( !channel ) uri = toHTTP( host )
+  let uri, query
+  if( !namespace ) uri = toHTTP( host )
   else {
     let [ main, params ] = host.split('?')
     if( params ) query = Params2Obj( params )
 
-    uri = toHTTP( host )+'/'+ channel
+    uri = toHTTP( host )+'/'+ namespace
   }
-  
-  // Commissionned Client Connection options
-  const options: any = {
+
+  const
+  parserStore = {
+    get: (): ParserStoreSet => { return socket.ParserStore },
+    set: ( toStore: ParserStoreSet ): void => { socket.ParserStore = toStore }
+  },
+  options: any = {
     query,
     transportOptions: {
       polling: {
@@ -374,16 +466,32 @@ export const Client = ( { host, channel }: ClientConnection, session?: string ) 
           'ON-Peer-Type': Config.get('type'),
           'ON-Peer-Role': Config.get('role') || 'None',
           'ON-Peer-ID': Config.get('cid'),
-          'ON-Peer-Protocol': 'ON-TCP/IP',
+          'ON-Peer-Protocol': 'E3Proto/TCP/IP',
           'ON-Time-Current': Date.now()
         }
       }
-    }
+    },
+    parser: Parser( 'client', { session }, parserStore )
   }
-
-  if( session )
-    options.parser = Parser( 'client', { session } )
+  
+  // Strict auth access
+  if( accessToken ) options.auth = { accessToken }
+  // Initiate connection
+  const 
+  socket: E3.PClient = ioClient( uri, options ),
+  emit = socket.emit
+  
+  socket.emit = ( _event: string, ...args: any[] ) => {
+    args.unshift( socket.id )
+    emit.bind( socket )( _event, ...args )
     
-  // Commnunication channels
-  return ioClient( uri, options )
+    return true
+  }
+  socket.io.engine.on('packet', ( packet: any ) => {
+    if( packet.type !== 'message' ) return
+    packet.data = packet.data.replace(/\}$/, `,"sid":"${socket.id}"}`)
+  })
+  
+  return socket
 }
+

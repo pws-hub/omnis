@@ -12,8 +12,8 @@ export const ENV = {
   support: SUPPORTED_NODE_VERSION,
   current: CURRENT_NODE_VERSION
 }
-export const ENTITIES = [ 'NSR', 'GPR' ]
-export const DOTXCN_FILE_PATH: string = path.resolve('.xcn')
+export const ENTITIES = ['NODE', 'ELEMENT']
+export const DOTOMNIS_FILE_PATH: string = path.resolve( process.cwd(), '.omnis')
 
 export const CENTRAL_ROUTING_NODE = 'CRN'
 

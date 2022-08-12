@@ -1,4 +1,12 @@
 {
+  "ts-node": {
+    "files": true
+  },
+  "files": [
+    "src/index.ts",
+    "types/index.d.ts",
+    "types/global.d.ts"
+  ],
   "compilerOptions": {
     "target": "es2016",
     "lib": ["es6"],
@@ -21,5 +29,5 @@
   },
   "include": [
     "./src/**/*"
-  ]
+, "types/global.d.ts", "test"  ]
 }
